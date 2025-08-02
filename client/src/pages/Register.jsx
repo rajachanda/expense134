@@ -53,11 +53,13 @@ const Register = () => {
       <div className="hidden lg:flex items-center justify-center bg-gradient-to-br from-primary-50 to-primary-100 dark:from-gray-800 dark:to-gray-700">
         <div className="w-full h-full flex items-center justify-center p-8">
           <div className="text-center max-w-md">
-            <img
-              src={signupIllustration}
-              alt="Signup Illustration"
-              className="max-w-full max-h-80 object-contain mx-auto mb-8"
-            />
+            <div className="bg-white rounded-lg p-6 mb-8 shadow-sm">
+              <img
+                src={signupIllustration}
+                alt="Signup Illustration"
+                className="max-w-full max-h-80 object-contain mx-auto"
+              />
+            </div>
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
               Join Our Community
             </h2>
