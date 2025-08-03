@@ -10,7 +10,7 @@ export class Expense {
           amount: parseFloat(amount),
           category,
           date: date || new Date().toISOString().split('T')[0],
-          description: note || '',
+          note: note || '',
           user_id: userId
         }])
         .select()
@@ -33,7 +33,7 @@ export class Expense {
       // Apply filters
       if (category) query = query.eq('category', category);
       if (search) {
-        query = query.or(`title.ilike.%${search}%,description.ilike.%${search}%`);
+        query = query.or(`title.ilike.%${search}%,note.ilike.%${search}%`);
       }
       if (startDate) query = query.gte('date', startDate);
       if (endDate) query = query.lte('date', endDate);

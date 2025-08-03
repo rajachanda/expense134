@@ -11,6 +11,7 @@ const getCurrentMonthDateRange = () => {
 };
 
 // GET /api/expenses
+// Example: GET /api/expenses?sortBy=date&sortOrder=desc&limit=10&page=1
 export const getExpenses = async (req, res) => {
   const { sortBy = 'date', sortOrder = 'desc', limit = 10, page = 1 } = req.query;
   const offset = (page - 1) * limit;
@@ -36,6 +37,7 @@ export const getExpenses = async (req, res) => {
 };
 
 // GET /api/expenses/:id
+// Example: GET /api/expenses/some-expense-id
 export const getExpenseById = async (req, res) => {
   try {
     const { data: expense, error } = await supabase
@@ -55,17 +57,23 @@ export const getExpenseById = async (req, res) => {
 };
 
 // POST /api/expenses
+// Example Body: { "title": "Coffee", "amount": 5, "category": "Food", "date": "2023-10-27", "description": "Morning coffee" }
 export const createExpense = async (req, res) => {
-  const { title, amount, category, date, note } = req.body;
+  const { title, amount, category, date, description } = req.body;
 
   if (!title || !amount || !category || !date) {
     return res.status(400).json({ message: 'Please provide all required fields' });
   }
 
   try {
+    const expenseData = { user_id: req.user.id, title, amount, category, date };
+    if (description) {
+      expenseData.description = description;
+    }
+
     const { data: newExpense, error } = await supabase
       .from('expenses')
-      .insert([{ user_id: req.user.id, title, amount, category, date, note }])
+      .insert([expenseData])
       .select()
       .single();
 
@@ -78,13 +86,20 @@ export const createExpense = async (req, res) => {
 };
 
 // PUT /api/expenses/:id
+// Example: PUT /api/expenses/some-expense-id
+// Example Body: { "title": "Coffee", "amount": 6, "category": "Food", "date": "2023-10-27", "description": "Morning coffee price hike" }
 export const updateExpense = async (req, res) => {
-  const { title, amount, category, date, note } = req.body;
+  const { title, amount, category, date, description } = req.body;
 
   try {
+    const expenseData = { title, amount, category, date };
+    if (description !== undefined) { // Allow updating description to an empty string
+      expenseData.description = description;
+    }
+
     const { data: updatedExpense, error } = await supabase
       .from('expenses')
-      .update({ title, amount, category, date, note })
+      .update(expenseData)
       .eq('id', req.params.id)
       .eq('user_id', req.user.id)
       .select()
@@ -100,6 +115,7 @@ export const updateExpense = async (req, res) => {
 };
 
 // DELETE /api/expenses/:id
+// Example: DELETE /api/expenses/some-expense-id
 export const deleteExpense = async (req, res) => {
   try {
     const { error } = await supabase
@@ -117,6 +133,7 @@ export const deleteExpense = async (req, res) => {
 };
 
 // GET /api/expenses/stats
+// Example: GET /api/expenses/stats
 export const getExpenseStats = async (req, res) => {
   try {
     const { startDate, endDate } = getCurrentMonthDateRange();
@@ -175,6 +192,7 @@ export const getExpenseStats = async (req, res) => {
 };
 
 // GET /api/expenses/budget-progress
+// Example: GET /api/expenses/budget-progress
 export const getBudgetProgress = async (req, res) => {
     try {
         const { startDate, endDate } = getCurrentMonthDateRange();
