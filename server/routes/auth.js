@@ -91,7 +91,7 @@ router.post(
       }
 
       // Create JWT
-      const payload = { user: { id: user.id } };
+      const payload = { id: user.id };
       const token = jwt.sign(payload, process.env.JWT_SECRET, {
         expiresIn: process.env.JWT_EXPIRE,
       });

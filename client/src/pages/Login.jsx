@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'react-hot-toast';
@@ -16,9 +16,14 @@ const Login = () => {
   const navigate = useNavigate();
 
   // Redirect if already authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/');
+    }
+  }, [isAuthenticated, navigate]);
+
   if (isAuthenticated) {
-    navigate('/');
-    return null;
+    return null
   }
 
   const handleChange = (e) => {
@@ -36,7 +41,7 @@ const Login = () => {
       toast.success('Login successful!');
       navigate('/');
     } catch (error) {
-      toast.error(error.message);
+      toast.error(error.response?.data?.message || 'Login failed. Please check your credentials.');
     } finally {
       setIsSubmitting(false);
     }
