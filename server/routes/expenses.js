@@ -1,6 +1,6 @@
 import express from 'express';
 import { body, validationResult, query } from 'express-validator';
-import Expense from '../models/Expense.js';
+import { supabase } from '../server.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { apiLimiter } from '../middleware/rateLimiter.js';
 
@@ -37,42 +37,25 @@ router.get('/', [
       sortOrder = 'desc'
     } = req.query;
 
-    // Build filter
-    const filter = { userId: req.user._id };
-
-    if (category) filter.category = category;
-    if (search) {
-      filter.$or = [
-        { title: { $regex: search, $options: 'i' } },
-        { note: { $regex: search, $options: 'i' } }
-      ];
-    }
-    if (startDate || endDate) {
-      filter.date = {};
-      if (startDate) filter.date.$gte = new Date(startDate);
-      if (endDate) filter.date.$lte = new Date(endDate);
-    }
-
-    // Build sort
-    const sort = {};
-    sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
-
-    // Execute query with pagination
-    const skip = (page - 1) * limit;
-    const expenses = await Expense.find(filter)
-      .sort(sort)
-      .skip(skip)
-      .limit(parseInt(limit));
-
-    const total = await Expense.countDocuments(filter);
+    const result = await Expense.findWithFilters({
+      userId: req.user.id,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      category,
+      search,
+      startDate,
+      endDate,
+      sortBy,
+      sortOrder
+    });
 
     res.json({
-      expenses,
+      expenses: result.expenses,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
-        total,
-        pages: Math.ceil(total / limit)
+        total: result.total,
+        pages: Math.ceil(result.total / limit)
       }
     });
   } catch (error) {
@@ -84,62 +67,23 @@ router.get('/', [
 // Get expense statistics
 router.get('/stats', async (req, res) => {
   try {
-    const userId = req.user._id;
+    const userId = req.user.id;
     const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const startOfWeek = new Date(now.setDate(now.getDate() - now.getDay()));
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+    const startOfWeek = new Date(now.setDate(now.getDate() - now.getDay())).toISOString().split('T')[0];
 
-    // Monthly and weekly totals
-    const [monthlyTotal, weeklyTotal, categoryStats, monthlyTrend, topExpenses] = await Promise.all([
-      // Monthly total
-      Expense.aggregate([
-        { $match: { userId, date: { $gte: startOfMonth } } },
-        { $group: { _id: null, total: { $sum: '$amount' } } }
-      ]),
-      // Weekly total
-      Expense.aggregate([
-        { $match: { userId, date: { $gte: startOfWeek } } },
-        { $group: { _id: null, total: { $sum: '$amount' } } }
-      ]),
-      // Category breakdown
-      Expense.aggregate([
-        { $match: { userId } },
-        { $group: { _id: '$category', total: { $sum: '$amount' }, count: { $sum: 1 } } },
-        { $sort: { total: -1 } }
-      ]),
-      // Monthly trend (last 6 months)
-      Expense.aggregate([
-        {
-          $match: {
-            userId,
-            date: { $gte: new Date(now.getFullYear(), now.getMonth() - 5, 1) }
-          }
-        },
-        {
-          $group: {
-            _id: {
-              year: { $year: '$date' },
-              month: { $month: '$date' }
-            },
-            total: { $sum: '$amount' },
-            count: { $sum: 1 }
-          }
-        },
-        { $sort: { '_id.year': 1, '_id.month': 1 } }
-      ]),
-      // Top 3 highest expenses this month
-      Expense.find({ userId, date: { $gte: startOfMonth } })
-        .sort({ amount: -1 })
-        .limit(3)
-        .select('title amount category date')
+    const [monthlyTotal, weeklyTotal, categoryStats] = await Promise.all([
+      Expense.getMonthlyTotal(userId, startOfMonth),
+      Expense.getMonthlyTotal(userId, startOfWeek),
+      Expense.getCategoryStats(userId)
     ]);
 
     res.json({
-      monthlyTotal: monthlyTotal[0]?.total || 0,
-      weeklyTotal: weeklyTotal[0]?.total || 0,
+      monthlyTotal,
+      weeklyTotal,
       categoryStats,
-      monthlyTrend,
-      topExpenses: topExpenses || []
+      monthlyTrend: [],
+      topExpenses: []
     });
   } catch (error) {
     console.error('Get stats error:', error);
@@ -150,20 +94,17 @@ router.get('/stats', async (req, res) => {
 // Get budget progress
 router.get('/budget-progress', async (req, res) => {
   try {
-    const userId = req.user._id;
+    const userId = req.user.id;
     const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
 
     const [monthlyTotal, user] = await Promise.all([
-      Expense.aggregate([
-        { $match: { userId, date: { $gte: startOfMonth } } },
-        { $group: { _id: null, total: { $sum: '$amount' } } }
-      ]),
-      req.user.populate ? req.user : await mongoose.model('User').findById(userId)
+      Expense.getMonthlyTotal(userId, startOfMonth),
+      User.findById(userId)
     ]);
 
-    const spent = monthlyTotal[0]?.total || 0;
-    const budget = user.monthlyBudget || 0;
+    const spent = monthlyTotal || 0;
+    const budget = user?.monthly_budget || 0;
     const percentage = budget > 0 ? Math.min((spent / budget) * 100, 100) : 0;
 
     res.json({
@@ -194,16 +135,15 @@ router.post('/', [
 
     const { title, amount, category, date, note } = req.body;
 
-    const expense = new Expense({
+    const expense = await Expense.create({
       title,
       amount: parseFloat(amount),
       category,
-      date: date ? new Date(date) : new Date(),
+      date: date ? new Date(date).toISOString().split('T')[0] : undefined,
       note: note || '',
-      userId: req.user._id
+      userId: req.user.id
     });
 
-    await expense.save();
     res.status(201).json({ message: 'Expense created successfully', expense });
   } catch (error) {
     console.error('Create expense error:', error);
@@ -226,13 +166,15 @@ router.put('/:id', [
     }
 
     const { id } = req.params;
-    const updates = req.body;
+    const updates = { ...req.body };
+    
+    // Convert note to description for Supabase
+    if (updates.note !== undefined) {
+      updates.description = updates.note;
+      delete updates.note;
+    }
 
-    const expense = await Expense.findOneAndUpdate(
-      { _id: id, userId: req.user._id },
-      updates,
-      { new: true, runValidators: true }
-    );
+    const expense = await Expense.updateById(id, req.user.id, updates);
 
     if (!expense) {
       return res.status(404).json({ message: 'Expense not found' });
@@ -250,7 +192,7 @@ router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
 
-    const expense = await Expense.findOneAndDelete({ _id: id, userId: req.user._id });
+    const expense = await Expense.deleteById(id, req.user.id);
 
     if (!expense) {
       return res.status(404).json({ message: 'Expense not found' });

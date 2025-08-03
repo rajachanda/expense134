@@ -1,56 +1,86 @@
-import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
+import { supabase } from '../server.js';
 
-const userSchema = new mongoose.Schema({
-  name: {
-    type: String,
-    required: [true, 'Name is required'],
-    trim: true,
-    maxlength: [50, 'Name cannot exceed 50 characters']
-  },
-  email: {
-    type: String,
-    required: [true, 'Email is required'],
-    unique: true,
-    lowercase: true,
-    match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, 'Please enter a valid email']
-  },
-  password: {
-    type: String,
-    required: [true, 'Password is required'],
-    minlength: [6, 'Password must be at least 6 characters']
-  },
-  monthlyBudget: {
-    type: Number,
-    default: 0
+export class User {
+  static async create({ name, email, password, monthlyBudget = 0 }) {
+    try {
+      // Hash password
+      const salt = await bcrypt.genSalt(12);
+      const hashedPassword = await bcrypt.hash(password, salt);
+
+      const { data, error } = await supabase
+        .from('users')
+        .insert([{
+          name: name.trim(),
+          email: email.toLowerCase(),
+          password: hashedPassword,
+          monthly_budget: monthlyBudget
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      throw error;
+    }
   }
-}, {
-  timestamps: true
-});
 
-// Hash password before saving
-userSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) return next();
-  
-  try {
-    const salt = await bcrypt.genSalt(12);
-    this.password = await bcrypt.hash(this.password, salt);
-    next();
-  } catch (error) {
-    next(error);
+  static async findByEmail(email) {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('email', email.toLowerCase())
+        .maybeSingle(); // Use maybeSingle() instead of single()
+
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      throw error;
+    }
   }
-});
 
-// Compare password method
-userSchema.methods.comparePassword = async function(candidatePassword) {
-  return await bcrypt.compare(candidatePassword, this.password);
-};
+  static async findById(id) {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle(); // Use maybeSingle() instead of single()
 
-// Remove password from JSON output
-userSchema.methods.toJSON = function() {
-  const userObject = this.toObject();
-  delete userObject.password;
-  return userObject;
-};
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      throw error;
+    }
+  }
 
-export default mongoose.model('User', userSchema);
+  static async updateById(id, updates) {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  static async comparePassword(candidatePassword, hashedPassword) {
+    return await bcrypt.compare(candidatePassword, hashedPassword);
+  }
+
+  static removePassword(user) {
+    if (!user) return user;
+    const { password, ...userWithoutPassword } = user;
+    return userWithoutPassword;
+  }
+}
+
+export default User;

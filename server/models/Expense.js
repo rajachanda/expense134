@@ -1,44 +1,158 @@
-import mongoose from 'mongoose';
+import { supabase } from '../server.js';
 
-const expenseSchema = new mongoose.Schema({
-  title: {
-    type: String,
-    required: [true, 'Title is required'],
-    trim: true,
-    maxlength: [100, 'Title cannot exceed 100 characters']
-  },
-  amount: {
-    type: Number,
-    required: [true, 'Amount is required'],
-    min: [0.01, 'Amount must be greater than 0']
-  },
-  category: {
-    type: String,
-    required: [true, 'Category is required'],
-    enum: ['Food', 'Transportation', 'Entertainment', 'Shopping', 'Bills', 'Healthcare', 'Education', 'Travel', 'Personal Care', 'Other'],
-    default: 'Other'
-  },
-  date: {
-    type: Date,
-    required: [true, 'Date is required'],
-    default: Date.now
-  },
-  note: {
-    type: String,
-    maxlength: [500, 'Note cannot exceed 500 characters'],
-    trim: true
-  },
-  userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
+export class Expense {
+  static async create({ title, amount, category, date, note, userId }) {
+    try {
+      const { data, error } = await supabase
+        .from('expenses')
+        .insert([{
+          title: title.trim(),
+          amount: parseFloat(amount),
+          category,
+          date: date || new Date().toISOString().split('T')[0],
+          description: note || '',
+          user_id: userId
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      throw error;
+    }
   }
-}, {
-  timestamps: true
-});
 
-// Index for efficient querying
-expenseSchema.index({ userId: 1, date: -1 });
-expenseSchema.index({ userId: 1, category: 1 });
+  static async findWithFilters({ userId, page = 1, limit = 10, category, search, startDate, endDate, sortBy = 'date', sortOrder = 'desc' }) {
+    try {
+      let query = supabase
+        .from('expenses')
+        .select('*', { count: 'exact' })
+        .eq('user_id', userId);
 
-export default mongoose.model('Expense', expenseSchema);
+      // Apply filters
+      if (category) query = query.eq('category', category);
+      if (search) {
+        query = query.or(`title.ilike.%${search}%,description.ilike.%${search}%`);
+      }
+      if (startDate) query = query.gte('date', startDate);
+      if (endDate) query = query.lte('date', endDate);
+
+      // Apply sorting
+      query = query.order(sortBy, { ascending: sortOrder === 'asc' });
+
+      // Apply pagination
+      const from = (page - 1) * limit;
+      const to = from + limit - 1;
+      query = query.range(from, to);
+
+      const { data, error, count } = await query;
+
+      if (error) throw error;
+
+      return {
+        expenses: data || [],
+        total: count || 0
+      };
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  static async findById(id, userId) {
+    try {
+      const { data, error } = await supabase
+        .from('expenses')
+        .select('*')
+        .eq('id', id)
+        .eq('user_id', userId)
+        .maybeSingle(); // Use maybeSingle() instead of single()
+
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  static async updateById(id, userId, updates) {
+    try {
+      const { data, error } = await supabase
+        .from('expenses')
+        .update(updates)
+        .eq('id', id)
+        .eq('user_id', userId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  static async deleteById(id, userId) {
+    try {
+      const { data, error } = await supabase
+        .from('expenses')
+        .delete()
+        .eq('id', id)
+        .eq('user_id', userId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  static async getMonthlyTotal(userId, startDate) {
+    try {
+      const { data, error } = await supabase
+        .from('expenses')
+        .select('amount')
+        .eq('user_id', userId)
+        .gte('date', startDate);
+
+      if (error) throw error;
+
+      const total = data?.reduce((sum, expense) => sum + expense.amount, 0) || 0;
+      return total;
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  static async getCategoryStats(userId) {
+    try {
+      const { data, error } = await supabase
+        .from('expenses')
+        .select('category, amount')
+        .eq('user_id', userId);
+
+      if (error) throw error;
+
+      const stats = {};
+      data?.forEach(expense => {
+        if (!stats[expense.category]) {
+          stats[expense.category] = { total: 0, count: 0 };
+        }
+        stats[expense.category].total += expense.amount;
+        stats[expense.category].count += 1;
+      });
+
+      return Object.entries(stats).map(([category, data]) => ({
+        _id: category,
+        total: data.total,
+        count: data.count
+      })).sort((a, b) => b.total - a.total);
+    } catch (error) {
+      throw error;
+    }
+  }
+}
+
+export default Expense;

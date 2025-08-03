@@ -47,7 +47,7 @@ export const getCurrentUser = async () => {
 };
 
 export const updateProfile = async (userData) => {
-  const response = await api.put('/auth/profile', userData);
+  const response = await api.put('/users/profile', userData);
   return response;
 };
 

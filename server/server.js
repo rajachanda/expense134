@@ -1,5 +1,5 @@
 import express from 'express';
-import mongoose from 'mongoose';
+import { createClient } from '@supabase/supabase-js';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import helmet from 'helmet';
@@ -13,6 +13,17 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+
+// Initialize Supabase
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseKey) {
+  console.error('Missing Supabase environment variables');
+  process.exit(1);
+}
+
+export const supabase = createClient(supabaseUrl, supabaseKey);
 
 // Security middleware
 app.use(helmet());
@@ -32,12 +43,22 @@ app.use(limiter);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// MongoDB connection
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://rajachanda1105:rkEIEKS8DCwv1A3U@cluster0.dlcbumg.mongodb.net/expense-tracker';
+// Test Supabase connection
+const testSupabaseConnection = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .select('count', { count: 'exact', head: true });
+    
+    if (error) throw error;
+    console.log('✅ Connected to Supabase successfully');
+  } catch (error) {
+    console.error('❌ Supabase connection failed:', error.message);
+    process.exit(1);
+  }
+};
 
-mongoose.connect(MONGODB_URI)
-  .then(() => console.log('Connected to MongoDB'))
-  .catch((error) => console.error('MongoDB connection error:', error));
+testSupabaseConnection();
 
 // Routes
 app.use('/api/auth', authRoutes);

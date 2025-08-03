@@ -1,6 +1,6 @@
 import express from 'express';
 import { body, validationResult } from 'express-validator';
-import User from '../models/User.js';
+import { supabase } from '../server.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { apiLimiter } from '../middleware/rateLimiter.js';
 
@@ -24,18 +24,27 @@ router.put('/profile', [
     }
 
     const { name, monthlyBudget } = req.body;
-    const updates = {};
+    const updates = { updated_at: new Date().toISOString() };
 
     if (name) updates.name = name;
-    if (monthlyBudget !== undefined) updates.monthlyBudget = monthlyBudget;
+    if (monthlyBudget !== undefined) updates.monthly_budget = monthlyBudget;
 
-    const user = await User.findByIdAndUpdate(
-      req.user._id,
-      updates,
-      { new: true, runValidators: true }
-    ).select('-password');
+    const { data: user, error } = await supabase
+      .from('users')
+      .update(updates)
+      .eq('id', req.user.id)
+      .select('id, email, name, monthly_budget, created_at, updated_at')
+      .single();
 
-    res.json({ message: 'Profile updated successfully', user });
+    if (error) {
+      console.error('Supabase update error:', error);
+      return res.status(500).json({ message: 'Error updating profile' });
+    }
+
+    res.json({ 
+      message: 'Profile updated successfully', 
+      user
+    });
   } catch (error) {
     console.error('Update profile error:', error);
     res.status(500).json({ message: 'Server error updating profile' });
