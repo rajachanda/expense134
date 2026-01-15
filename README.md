@@ -1,6 +1,6 @@
 # Expense Tracker API
 
-This is the backend API for a comprehensive expense tracking application. It allows users to manage their expenses, view statistics, and track their budget. The API is built with Node.js, Express, and uses Supabase for the database and authentication.
+This is the backend API for a comprehensive expense tracking application.It allows users to manage their expenses, view statistics, and track their budget. The API is built with Node.js, Express, and uses Supabase for the database and authentication.
 
 ## Features
 
